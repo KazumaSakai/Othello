@@ -3,15 +3,19 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Windows.Forms;
+using System.Drawing;
 
 namespace Othello
 {
     /// <summary>
     /// オセロのゲームを実際に行うボードのオブジェクト
     /// </summary>
-    public class OthelloBoard
+    public class OthelloBoard : IDebugOutput, IFormPanel
     {
-
+        //
+        //  Variable
+        //
         /// <summary>
         /// マスの状態
         /// </summary>
@@ -46,6 +50,11 @@ namespace Othello
         public Vector2[] deltaDirection = { new Vector2(0, -1), new Vector2(1, -1), new Vector2(1, 0), new Vector2(1, 1), new Vector2(0, 1), new Vector2(-1, 1), new Vector2(-1, 0), new Vector2(-1, -1) };
 
         /// <summary>
+        /// ゲームが既に終了している
+        /// </summary>
+        public bool EndGame;
+
+        /// <summary>
         /// 次のプレイヤーID
         /// </summary>
         private int nextPlayerId;
@@ -58,8 +67,14 @@ namespace Othello
         /// </summary>
         private int playerNumber;
 
+        /// <summary>
+        /// 石を置ける場所
+        /// </summary>
+        private List<Vector2> CanPutPointList;
 
-
+        //
+        //  Method
+        //
         /// <summary>
         /// コンストラクタ
         /// <para>オセロのボードを作成する</para>
@@ -74,6 +89,8 @@ namespace Othello
             this.boardSquaresData = new SquareState[boardSize, boardSize];
             this.playerNumber = playerNumber;
             this.boardSize = boardSize;
+            this.EndGame = false;
+            CanPutPointList = new List<Vector2>(boardSize * boardSize);
 
             Initialization();
         }
@@ -85,10 +102,19 @@ namespace Othello
         {
             int centerPosition = boardSize / 2;
 
+            for (int y = 0; y < boardSize; y++)
+            {
+                for (int x = 0; x < boardSize; x++)
+                {
+                    boardSquaresData[x, y] = SquareState.None;
+                }
+            }
             boardSquaresData[centerPosition - 1, centerPosition - 1] = (SquareState)1;
             boardSquaresData[centerPosition, centerPosition] = (SquareState)1;
             boardSquaresData[centerPosition -1, centerPosition] = (SquareState)2;
             boardSquaresData[centerPosition, centerPosition - 1] = (SquareState)2;
+
+            UpdateBoardPanel();
         }
 
         /// <summary>
@@ -134,6 +160,11 @@ namespace Othello
         /// <returns>置くことができたか</returns>
         public bool PutDisc(Vector2 position, int playerId = -1)
         {
+            if (EndGame)
+            {
+                Initialization();
+                return false;
+            }
             if (playerId < 0 || playerId >= playerNumber) playerId = nextPlayerId;
             if (!CanPutDisc(position, playerId)) return false;
 
@@ -144,7 +175,32 @@ namespace Othello
                 InversDisc(position, (Direction)(i), playerId);
             }
 
-            NextPlayer(playerId);
+            for (int i = 0; i < 2; i++)
+            {
+                NextPlayer(playerId);
+            
+                if (CanPutPointList.Count > 0) CanPutPointList.Clear();
+
+                for (int y = 0; y < boardSize; y++)
+                {
+                    for (int x = 0; x < boardSize; x++)
+                    {
+                        if (CanPutDisc(x, y))
+                        {
+                            CanPutPointList.Add(new Vector2(x, y));
+                        }
+                    }
+                }
+
+                if (CanPutPointList.Count != 0)
+                {
+                    UpdateBoardPanel();
+                    return true;
+                }
+            }
+
+            EndGame = true;
+            UpdateBoardPanel();
             return true;
         }
         /// <summary>
@@ -156,7 +212,7 @@ namespace Othello
         /// <returns>置くことができたか</returns>
         public bool PutDisc(int x, int y, int playerId = -1)
         {
-            return CanPutDisc(new Vector2(x, y));
+            return PutDisc(new Vector2(x, y));
         }
 
         /// <summary>
@@ -224,7 +280,6 @@ namespace Othello
                 }
             }
         }
-
         /// <summary>
         /// 石を置いて、相手の石を反転させます
         /// </summary>
@@ -246,10 +301,13 @@ namespace Othello
             }
         }
 
+        //
+        //  IDebugOutput
+        //
         /// <summary>
         /// デバッグ用、現在の状況を出力する
         /// </summary>
-        public void DebugOutPut()
+        public void DebugOutput()
         {
             Console.Clear();
 
@@ -295,6 +353,113 @@ namespace Othello
                 }
                 Console.WriteLine(sb.ToString());
                 sb.Clear();
+            }
+        }
+
+
+        //
+        //  IFormPanel
+        //
+        /// <summary>
+        /// フォームに表示する用のパネル
+        /// </summary>
+        public Panel formPanel
+        {
+            get
+            {
+                if (boardPanel == null)
+                {
+                    CreateFormPanel();
+                }
+                return boardPanel;
+            }
+        }
+        /// <summary>
+        /// フォームに表示するボードのパネル
+        /// </summary>
+        private Panel boardPanel;
+        /// <summary>
+        /// マス（石）のパネル
+        /// </summary>
+        private Panel[,] squarePanels;
+        /// <summary>
+        /// マス(石)の画像 データ配列
+        /// </summary>
+        private Image[] squareImage = new Image[] { null, Properties.Resources.Black_Disc, Properties.Resources.White_Disc };
+        private Image[] squareTransparentImage = new Image[] { Properties.Resources.Black_Disc_Transparent, Properties.Resources.White_Disc_Transparent };
+
+        /// <summary>
+        /// フォーム用のパネルを作成する
+        /// </summary>
+        private void CreateFormPanel()
+        {
+            boardPanel = new Panel();
+            boardPanel.SuspendLayout();
+            boardPanel.Location = new Point(20, 20);
+            boardPanel.Margin = new Padding(1);
+            boardPanel.Size = new Size(340, 340);
+            boardPanel.TabIndex = 0;
+        
+            squarePanels = new Panel[boardSize, boardSize];
+            StringBuilder sb = new StringBuilder();
+            for (int y = 0; y < boardSize; y++)
+            {
+                for (int x = 0; x < boardSize; x++)
+                {
+                    squarePanels[x, y] = new Panel();
+                    squarePanels[x, y].BackColor = Color.Green;
+
+                    squarePanels[x, y].BackgroundImage = squareImage[(int)boardSquaresData[x,y]];
+                    squarePanels[x, y].BackgroundImageLayout = ImageLayout.Center;
+                    squarePanels[x, y].BorderStyle = BorderStyle.FixedSingle;
+                    squarePanels[x, y].Location = new Point(1 + (41 * x), 1 + (41 * y));
+                    squarePanels[x, y].Margin = new Padding(1);
+                    squarePanels[x, y].Size = new Size(40, 40);
+                    squarePanels[x, y].TabIndex = 0;
+                    squarePanels[x, y].Click += new EventHandler(ClickSquare);
+                    squarePanels[x, y].Name = sb.Append(x).Append(" ").Append(y).ToString();
+                    boardPanel.Controls.Add(squarePanels[x, y]);
+
+                    sb.Clear();
+                }
+            }
+
+            boardPanel.ResumeLayout(false);
+        }
+
+        /// <summary>
+        /// マス目をクリックしたときのイベント
+        /// </summary>
+        /// <param name="sender">送り主</param>
+        /// <param name="e">EventArgs</param>
+        private void ClickSquare(object sender, EventArgs e)
+        {
+            string[] xy = (sender as Panel).Name.Split(' ');
+            int x = int.Parse(xy[0]);
+            int y = int.Parse(xy[1]);
+            PutDisc(x, y);
+        }
+
+        /// <summary>
+        /// ボードのパネルを更新する
+        /// </summary>
+        private void UpdateBoardPanel()
+        {
+            if (boardPanel == null) return;
+
+            for (int y = 0; y < boardSize; y++)
+            {
+                for (int x = 0; x < boardSize; x++)
+                {
+                    if (boardSquaresData[x, y] == SquareState.None && CanPutDisc(x, y))
+                    {
+                        squarePanels[x, y].BackgroundImage = squareTransparentImage[nextPlayerId];
+                    }
+                    else
+                    {
+                        squarePanels[x, y].BackgroundImage = squareImage[(int)boardSquaresData[x, y]];
+                    }
+                }
             }
         }
     }
