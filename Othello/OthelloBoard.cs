@@ -70,7 +70,7 @@ namespace Othello
         /// <summary>
         /// 石を置ける場所
         /// </summary>
-        private List<Vector2> CanPutPointList;
+        private List<(Vector2, int)> CanPutPointList;
 
         //
         //  Method
@@ -90,7 +90,7 @@ namespace Othello
             this.playerNumber = playerNumber;
             this.boardSize = boardSize;
             this.EndGame = false;
-            CanPutPointList = new List<Vector2>(boardSize * boardSize);
+            this.CanPutPointList = new List<(Vector2, int)>(boardSize * boardSize);
 
             Initialization();
         }
@@ -114,7 +114,11 @@ namespace Othello
             boardSquaresData[centerPosition -1, centerPosition] = (SquareState)2;
             boardSquaresData[centerPosition, centerPosition - 1] = (SquareState)2;
 
+            nextPlayerId = 0;
+
+            EndGame = false;
             UpdateBoardPanel();
+            FindCanPutPoint();
         }
 
         /// <summary>
@@ -162,7 +166,7 @@ namespace Othello
         {
             if (EndGame)
             {
-                Initialization();
+                NextGame();
                 return false;
             }
             if (playerId < 0 || playerId >= playerNumber) playerId = nextPlayerId;
@@ -178,22 +182,25 @@ namespace Othello
             for (int i = 0; i < 2; i++)
             {
                 NextPlayer(playerId);
-            
-                if (CanPutPointList.Count > 0) CanPutPointList.Clear();
-
-                for (int y = 0; y < boardSize; y++)
+                FindCanPutPoint();
+                if (CanPutPointList.Count > 0)
                 {
-                    for (int x = 0; x < boardSize; x++)
+                    if(playerId == 0)
                     {
-                        if (CanPutDisc(x, y))
+                        Vector2 maxPos = CanPutPointList[0].Item1;
+                        int maxpoint = int.MinValue;
+                        foreach ((Vector2, int) point in CanPutPointList)
                         {
-                            CanPutPointList.Add(new Vector2(x, y));
+                            if (maxpoint < point.Item2)
+                            {
+                                maxPos = point.Item1;
+                                maxpoint = point.Item2;
+                            }
                         }
+                        PutDisc(maxPos);
+                        return true;
                     }
-                }
 
-                if (CanPutPointList.Count != 0)
-                {
                     UpdateBoardPanel();
                     return true;
                 }
@@ -301,6 +308,66 @@ namespace Othello
             }
         }
 
+        /// <summary>
+        /// 次のゲームを開始する
+        /// </summary>
+        public void NextGame()
+        {
+            (int, int) result = CountDisc();
+
+            Initialization();
+        }
+
+        /// <summary>
+        /// おける位置を探す
+        /// </summary>
+        private void FindCanPutPoint()
+        {
+            if (CanPutPointList.Count > 0) CanPutPointList.Clear();
+            for (int y = 0; y < boardSize; y++)
+            {
+                for (int x = 0; x < boardSize; x++)
+                {
+                    if (CanPutDisc(x, y))
+                    {
+                        int p = 1;
+                        if ((x == 0 || x == 7) && (y == 0 || y == 7)) p = 100;
+                        if ((x == 1 || x == 6) && (y == 0 || y == 7)) p = -100;
+                        if ((x == 0 || x == 7) && (y == 1 || y == 6)) p = -100;
+                        if ((x == 1 || x == 6) && (y == 1 || y == 6)) p = -100;
+                        CanPutPointList.Add((new Vector2(x, y), p));
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 石の数を数える
+        /// </summary>
+        /// <returns>黒の数、　白の数</returns>
+        private (int, int) CountDisc()
+        {
+            int black = 0, white = 0;
+            for (int y = 0; y < boardSize; y++)
+            {
+                for (int x = 0; x < boardSize; x++)
+                {
+                    switch (boardSquaresData[x, y])
+                    {
+                        case SquareState.Black:
+                            black++;
+                            break;
+
+                        case SquareState.White:
+                            white++;
+                            break;
+                    }
+                }
+            }
+            return (black, white);
+        }
+
+
         //
         //  IDebugOutput
         //
@@ -387,6 +454,7 @@ namespace Othello
         /// </summary>
         private Image[] squareImage = new Image[] { null, Properties.Resources.Black_Disc, Properties.Resources.White_Disc };
         private Image[] squareTransparentImage = new Image[] { Properties.Resources.Black_Disc_Transparent, Properties.Resources.White_Disc_Transparent };
+        private Label resultLabel;
 
         /// <summary>
         /// フォーム用のパネルを作成する
@@ -397,7 +465,7 @@ namespace Othello
             boardPanel.SuspendLayout();
             boardPanel.Location = new Point(20, 20);
             boardPanel.Margin = new Padding(1);
-            boardPanel.Size = new Size(340, 340);
+            boardPanel.Size = new Size(340, 370);
             boardPanel.TabIndex = 0;
         
             squarePanels = new Panel[boardSize, boardSize];
@@ -424,7 +492,17 @@ namespace Othello
                 }
             }
 
+            resultLabel = new Label();
+            resultLabel.Location = new Point(10, 340);
+            resultLabel.TextAlign = ContentAlignment.MiddleCenter;
+            resultLabel.Size = new Size(320, 20);
+            resultLabel.TabIndex = 0;
+            resultLabel.Font = new Font(resultLabel.Font.OriginalFontName, 12.0f);
+            boardPanel.Controls.Add(resultLabel);
+
             boardPanel.ResumeLayout(false);
+
+            UpdateBoardPanel();
         }
 
         /// <summary>
@@ -461,6 +539,13 @@ namespace Othello
                     }
                 }
             }
+
+            StringBuilder sb = new StringBuilder();
+
+            (int, int) result = CountDisc();
+
+            string winner = (result.Item1 == result.Item2) ? "引き分け　" : (result.Item1 > result.Item2) ? "黒の勝ち　" : "白の勝ち　";
+            resultLabel.Text = sb.Append(EndGame ? winner : "").Append("黒: ").Append(result.Item1).Append(", 白: ").Append(result.Item2).ToString();
         }
     }
 }
